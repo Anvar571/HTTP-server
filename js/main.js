@@ -1,113 +1,100 @@
-const net = require("net");
+const net = require('net')
+const fs = require('fs')
+const path = require('path')
+const port = 5000;
+
+const Headers = require('./header')
+
+const textResponse = (text) => {
+  return (
+    'HTTP/1.1 200 OK\r\n' +
+    'Content-Type: text/plain\r\n' +
+    `Content-Length: ${text.length}\r\n\r\n${text}`
+  )
+}
+
+const fileResponse = (bytesRead, buffer) => {
+  return (
+    'HTTP/1.1 200 OK\r\n' +
+    'Content-Type: application/octet-stream\r\n' +
+    `Content-Length: ${bytesRead}\r\n\r\n${buffer}`
+  )
+}
+
+const fileCreatedResponse = () => {
+  return (
+    'HTTP/1.1 201 Created\r\n\r\n'
+  )
+}
+
+const notFoundResponse = () => {
+  return 'HTTP/1.1 404 Not Found\r\n\r\n'
+}
+
+const handlers = {
+  '/echo': function () {
+    const [, text] = this.headers.path.match(/\/echo\/(.+)/)
+
+    this.socket.write(textResponse(text), 'utf-8')
+  },
+  '/user-agent': function () {
+    this.socket.write(textResponse(this.headers.ua), 'utf-8')
+  },
+  '/files': function () {
+    const [, filename] = this.headers.path.match(/\/files\/(.+)/)
+
+    const dirFlag = process.argv.indexOf('--directory') + 1
+    const directory = process.argv[dirFlag]
+
+    const filePath = path.join(directory, filename)
+
+    try {
+      if (this.headers.method === 'GET') {
+        const fd = fs.openSync(filePath, 'r')
+        const contents = fs.readFileSync(fd)
+
+        this.socket.write(fileResponse(contents.length, contents))
+      } else if (this.headers.method === 'POST') {
+        fs.writeFileSync(filePath, this.headers.data)
+        this.socket.write(fileCreatedResponse())
+      }
+    } catch (error) {
+      this.socket.write(notFoundResponse())
+    }
+  },
+  '/': function () {
+    this.socket.write('HTTP/1.1 200 OK\r\n\r\n', 'utf-8')
+  },
+}
+
+const getHandler = (path, handlers) => {
+  const [, route] = path.split('/');
+  const handlerKey = `/${route}`;
+
+  return handlers[handlerKey];
+}
 
 const server = net.createServer((socket) => {
-  socket.on("close", () => {
-    socket.end();
-    server.close();
-  });
+  socket.on('data', (data) => {
+    const headers = Headers.parse(data)
+    const handler = getHandler(headers.path, handlers)
 
-  socket.on("data", (data) => {
-    const request = Request.fromBuffer(data);
-    const response = new Response(request);
+    if (!handler) {
+      socket.write(notFoundResponse())
+      socket.end();
 
-    handlers(request, response)
+      return;
+    }
 
-    response.writeToSocket(socket)
+    handler.call({ socket, headers })
+    socket.end()
   })
-});
 
-server.listen(4221, "localhost");
-
-server.on("error", err => {
-  console.error(err)
+  socket.on('close', () => {
+    socket.end()
+  })
 })
 
-function handlers(req, res) {
-  if (req.path === "/") {
-    res.setStatus(200)
-    return
-  }
-
-  if (/^\/echo\/.*/.test(req.path)) {
-    res.setBody(Buffer.from(req.path.slice(6)))
-    return
-  }
-
-  res.setStatus(404)
-}
-
-class Request {
-  constructor(method, path, proto, headers, body) {
-    this.method = method;
-    this.path = path;
-    this.proto = proto;
-    this.headers = headers;
-    this.body = body;
-  }
-
-  /**
-  * @param {Uint8Array} buffer
-  */
-  static fromBuffer(buffer) {
-    const firstLine = buffer.toString().split("\r\n")[0];
-    const [method, path, proto] = firstLine.split(" ");
-
-    return new Request(method, path, proto, {}, null)
-  }
-}
-
-class Response {
-  constructor(request) {
-    this.req = request
-    this.status = 200
-    this.headers = {
-      "Content-Type": "text/plain"
-    }
-    this.body = null
-  }
-
-  setStatus(status) {
-    this.status = status
-    return this
-  }
-
-  setHeaders(key, value) {
-    this.headers[key] = value
-    return this
-  }
-
-  /**
-  * @param {Uint8Array} body
-  */
-  setBody(body) {
-    this.body = body
-    this.headers["Content-Length"] = body.length
-    return this
-  }
-
-  /**
-  * @param {net.Socket} socket
-  */
-  writeToSocket(socket) {
-    let payload = `${this.req.proto} ${this.status} ${statusString(this.status)}\r\n`;
-    let headers = Object.keys(this.headers).map(key => `${key}: ${this.headers[key]}`).join("\r\n");
-    payload += headers + "\r\n\r\n";
-
-    if (this.body) {
-      payload += this.body;
-    }
-
-    socket.end(payload)
-  }
-}
-
-function statusString(status) {
-  switch (status) {
-    case 200:
-      return "OK"
-    case 404:
-      return "Not Found"
-    default:
-      return "Unknown"
-  }
-}
+server.listen(port, 'localhost', () => {
+  console.log(`Server listen on ${port} port`);
+})
