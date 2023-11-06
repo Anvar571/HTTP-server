@@ -13,6 +13,16 @@ const textResponse = (text) => {
   )
 }
 
+const helloHtmlFunction = () => {
+  return (
+    'HTTP/1.1 200 OK\r\n' +
+    'Content-Type: text/html\r\n' +
+    'Content-Length: 100\r\n' +
+    '\r\n' +
+    '<html><head><title>Hello World</title></head><h1>Hello World</h1></html >\r\n'
+  )
+}
+
 const fileResponse = (bytesRead, buffer) => {
   return (
     'HTTP/1.1 200 OK\r\n' +
@@ -65,6 +75,10 @@ const handlers = {
   '/': function () {
     this.socket.write('HTTP/1.1 200 OK\r\n\r\n', 'utf-8')
   },
+  '/hello': function () {
+    this.socket.write(helloHtmlFunction());
+    this.socket.end();
+  }
 }
 
 const getHandler = (path, handlers) => {
