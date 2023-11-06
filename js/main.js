@@ -13,6 +13,16 @@ const textResponse = (text) => {
   )
 }
 
+const firstFunction = () => {
+  return (
+    'HTTP/1.1 200 OK\r\n' +
+    'Content-Type: text/html\r\n' +
+    'Content-Length: 100\r\n' +
+    '\r\n' +
+    '<html><head><title>Hello World</title></head><h1>Welcome to HTTP server</h1></html >\r\n'
+  )
+}
+
 const helloHtmlFunction = () => {
   return (
     'HTTP/1.1 200 OK\r\n' +
@@ -28,6 +38,12 @@ const fileResponse = (bytesRead, buffer) => {
     'HTTP/1.1 200 OK\r\n' +
     'Content-Type: application/octet-stream\r\n' +
     `Content-Length: ${bytesRead}\r\n\r\n${buffer}`
+  )
+}
+
+const sendJsonData = (body) => {
+  return (
+    `HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ${Buffer.byteLength(body)}\r\n\r\n${body}`
   )
 }
 
@@ -73,11 +89,19 @@ const handlers = {
     }
   },
   '/': function () {
-    this.socket.write('HTTP/1.1 200 OK\r\n\r\n', 'utf-8')
+    this.socket.write(firstFunction(), 'utf-8')
   },
   '/hello': function () {
     this.socket.write(helloHtmlFunction());
-    this.socket.end();
+  },
+  '/json': function () {
+    const data = {
+      name: 'lorem',
+      age: 22,
+      lastname: 'ipsum'
+    };
+    const jsonData = JSON.stringify(data);
+    this.socket.write(sendJsonData(jsonData));
   }
 }
 
