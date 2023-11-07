@@ -1,50 +1,10 @@
+const { firstFunction, helloHtmlFunction, notFoundResponse, sendJsonData, textResponse, upgradeWebSocket } = require('./protocol-types');
+const Headers = require('./header')
 const net = require('net')
 const fs = require('fs')
 const path = require('path')
 const port = 5000;
-
-const Headers = require('./header')
-
-const textResponse = (text) => {
-  return (
-    'HTTP/1.1 200 OK\r\n' +
-    'Content-Type: text/plain\r\n' +
-    `Content-Length: ${text.length}\r\n\r\n${text}`
-  )
-}
-
-const firstFunction = () => {
-  return (
-    'HTTP/1.1 200 OK\r\n' +
-    'Content-Type: text/html\r\n' +
-    'Content-Length: 100\r\n' +
-    '\r\n' +
-    '<html><head><title>Hello World</title></head><h1>Welcome to HTTP server</h1></html >\r\n'
-  )
-}
-
-const helloHtmlFunction = () => {
-  return (
-    'HTTP/1.1 200 OK\r\n' +
-    'Content-Type: text/html\r\n' +
-    'Content-Length: 100\r\n' +
-    '\r\n' +
-    '<html><head><title>Hello World</title></head><h1>Hello World</h1></html >\r\n'
-  )
-}
-
-const sendJsonData = (body) => {
-  return (
-    `HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ${Buffer.byteLength(body)}\r\n\r\n${body}`
-  )
-}
-
-const notFoundResponse = (body) => {
-  return (
-    `HTTP/1.1 404 Not Found\r\nContent-Type: application/json\r\nContent-Length: ${Buffer.byteLength(body)}\r\n\r\n${body}`
-
-  )
-}
+const crypto = require('crypto');
 
 const handlers = {
   '/echo': function () {
@@ -68,6 +28,14 @@ const handlers = {
     };
     const jsonData = JSON.stringify(data);
     this.socket.write(sendJsonData(jsonData));
+  },
+  '/wss': function () {
+    const acceptKey = getWebSocketAcceptKey(request);
+
+    const responseHeaders = upgradeWebSocket(acceptKey);
+    console.log('ws', responseHeaders);
+
+    this.socket.write(responseHeaders);
   }
 }
 
@@ -80,29 +48,59 @@ const getHandler = (path, handlers) => {
 
 const server = net.createServer((socket) => {
   socket.on('data', (data) => {
-    const headers = Headers.parse(data)
-    const handler = getHandler(headers.path, handlers)
+    const headers = Headers.parse(data);
+    const handler = getHandler(headers.path, handlers);
+    const request = data.toString();
 
-    if (!handler) {
-      const body = {
-        status: 404,
-        message: 'Not found endpoint'
-      };
-      const jsonData = JSON.stringify(body);
-      socket.write(notFoundResponse(jsonData))
-      socket.end();
+    // websocket communication
+    if (request.includes('Upgrade: websocket')) {
+      const acceptKey = getWebSocketAcceptKey(request);
 
-      return;
+      const responseHeaders = upgradeWebSocket(acceptKey);
+      console.log('ws', responseHeaders);
+
+      socket.write(responseHeaders);
+
+      handleWebSocketCommunication(socket);
+    } else {
+      // rest api
+      if (!handler) {
+        const body = {
+          status: 404,
+          message: 'Not found endpoint'
+        };
+        const jsonData = JSON.stringify(body);
+        socket.write(notFoundResponse(jsonData))
+        socket.end();
+
+        return;
+      }
+
+      handler.call({ socket, headers })
+      socket.end()
     }
-
-    handler.call({ socket, headers })
-    socket.end()
   })
 
   socket.on('close', () => {
     socket.end()
   })
 })
+
+function getWebSocketAcceptKey(request) {
+  const key = request.match(/Sec-WebSocket-Key: (.+)/)[1].trim();
+  const secret = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
+  const hash = crypto.createHash('sha1').update(key + secret).digest('base64');
+  return hash;
+}
+
+function handleWebSocketCommunication(socket) {
+  console.log('web socket');
+  const clients = [];
+  clients.push(socket);
+  clients.forEach((val) => {
+    val.write('connection successfully');
+  })
+}
 
 server.listen(port, 'localhost', () => {
   console.log(`Server listen on ${port} port`);
